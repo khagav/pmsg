@@ -3,137 +3,113 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>i消息中心</title>
+  <title>访客消息页</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
   <header class="bg-white shadow-sm p-4 text-center">
-    <h1 class="text-2xl font-bold text-green-600">i消息中心</h1>
+    <h1 class="text-2xl font-bold text-blue-600">访客消息页</h1>
   </header>
 
-  <!-- 登录界面 -->
+  <!-- 初始输入界面 -->
   <div class="flex-1 flex flex-col justify-center items-center p-4">
     <div class="bg-white rounded-xl shadow-md p-6 w-full max-w-md">
       <div class="mb-4">
-        <label class="block text-gray-700 mb-2">你的iId（复制到客人页面）</label>
-        <input type="text" id="iId" placeholder="点击生成iId" readonly
-          class="w-full px-4 py-2 border rounded-lg bg-gray-50">
-        <button id="genIdBtn" class="mt-2 text-green-600 hover:underline text-sm">生成iId</button>
-      </div>
-      <div class="mb-4">
-        <label class="block text-gray-700 mb-2">密码（至少6位）</label>
-        <input type="password" id="password" placeholder="设置登录密码" 
+        <label class="block text-gray-700 mb-2">你的昵称</label>
+        <input type="text" id="guestNickname" placeholder="输入昵称" 
           class="w-full px-4 py-2 border rounded-lg">
       </div>
-      <button id="loginBtn" class="w-full py-3 bg-green-600 text-white rounded-lg">
-        登录消息中心
+      <button id="enterBtn" class="w-full py-3 bg-blue-600 text-white rounded-lg">
+        进入聊天
       </button>
     </div>
   </div>
 
   <!-- 聊天界面 -->
   <div id="chatScreen" class="hidden flex-1 flex flex-col p-4">
+    <!-- 验证状态提示 -->
+    <div id="verifyTip" class="hidden p-2 bg-yellow-50 text-yellow-700 rounded-lg mb-2 text-sm">
+      你的消息需等待主人验证通过...
+    </div>
+
     <div class="bg-white rounded-xl shadow-sm p-4 h-full flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-bold">消息中心</h3>
+        <h3 class="text-lg font-bold">给i发消息</h3>
         <span id="status" class="text-xs px-2 py-1 rounded-full bg-gray-100">未连接</span>
       </div>
-
-      <!-- 客人权限管理区 -->
-      <div class="mb-4 border-b pb-2">
-        <h4 class="font-semibold mb-2">客人权限管理</h4>
-        
-        <!-- 待验证客人 -->
-        <div class="mb-3">
-          <h5 class="text-sm font-medium text-orange-600">待验证客人</h5>
-          <div id="pendingGuests" class="bg-orange-50 p-2 rounded-lg min-h-[40px]">
-            <p class="text-xs text-gray-500">暂无待验证客人</p>
-          </div>
-        </div>
-        
-        <!-- 已允许客人 -->
-        <div>
-          <h5 class="text-sm font-medium text-green-600">已允许客人（可移除）</h5>
-          <div id="allowedGuests" class="bg-green-50 p-2 rounded-lg min-h-[40px]">
-            <p class="text-xs text-gray-500">暂无已允许客人</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 离线消息区 -->
-      <div class="mb-4">
-        <h4 class="font-semibold mb-2">离线消息</h4>
-        <div id="offlineMessages" class="bg-gray-50 p-2 rounded-lg">
-          <p id="noOffline" class="text-gray-500">暂无离线消息</p>
-          <div id="offlineList" class="hidden"></div>
-        </div>
-      </div>
-
-      <!-- 在线消息区 -->
-      <div class="mb-4">
-        <h4 class="font-semibold mb-2">在线消息</h4>
-        <div id="onlineMessages" class="flex-1 overflow-y-auto p-2"></div>
-      </div>
-
-      <!-- 回复区 -->
+      <div id="messages" class="flex-1 overflow-y-auto mb-4 p-2"></div>
       <div class="flex">
-        <input type="text" id="replyInput" placeholder="回复消息..." 
+        <input type="text" id="msgInput" placeholder="输入消息..." 
           class="flex-1 px-4 py-2 border rounded-l-lg">
-        <button id="replyBtn" class="bg-green-600 text-white px-4 py-2 rounded-r-lg">回复</button>
+        <button id="sendBtn" class="bg-blue-600 text-white px-4 py-2 rounded-r-lg">发送</button>
       </div>
     </div>
   </div>
 
   <script>
+    // 替换为你的主人iId（从主人页面生成后填入）
+    const iId = "i_1719283746509abc"; 
+
     // 替换为你的信令服务器地址（部署后填写）
     const SIGNAL_WS = 'wss://signal-worker.yourname.workers.dev'; 
-    let ws, iId;
+    let ws, guestId, isVerified = false;
 
-    // 生成iId
-    document.getElementById('genIdBtn').addEventListener('click', () => {
-      iId = 'i_' + Date.now() + Math.random().toString(36).slice(2, 8);
-      document.getElementById('iId').value = iId;
-      alert('iId已生成：' + iId + '，请复制到guest/index.html中！');
-    });
+    // 生成/读取客人ID及验证状态（本地存储）
+    const GUEST_STORAGE_KEY = 'guest_info';
+    const storedGuest = localStorage.getItem(GUEST_STORAGE_KEY);
+    if (storedGuest) {
+      const data = JSON.parse(storedGuest);
+      guestId = data.id;
+      isVerified = data.isVerified || false;
+    } else {
+      guestId = 'guest_' + Date.now() + Math.random().toString(36).slice(2, 8);
+    }
 
-    // 登录
-    document.getElementById('loginBtn').addEventListener('click', () => {
-      iId = document.getElementById('iId').value.trim();
-      const password = document.getElementById('password').value.trim();
+    // 进入聊天
+    document.getElementById('enterBtn').addEventListener('click', () => {
+      const nickname = document.getElementById('guestNickname').value.trim();
+      if (!nickname) return alert('请输入昵称');
       
-      if (!iId) return alert('请先生成iId');
-      if (password.length < 6) return alert('密码至少6位');
-      
-      localStorage.setItem('i_info', JSON.stringify({ id: iId }));
+      localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify({
+        nickname: nickname,
+        id: guestId,
+        isVerified: isVerified
+      }));
       
       document.querySelector('.flex-1').classList.add('hidden');
       document.getElementById('chatScreen').classList.remove('hidden');
-      connectToServer(password);
+      connectToServer(nickname);
     });
 
     // 连接信令服务器
-    function connectToServer(password) {
-      ws = new WebSocket(`${SIGNAL_WS}?id=${iId}&role=i&pwd=${password}`);
+    function connectToServer(nickname) {
+      ws = new WebSocket(`${SIGNAL_WS}?id=${guestId}&role=guest`);
       
       ws.onopen = () => {
         document.getElementById('status').textContent = '在线';
         document.getElementById('status').className = 'text-xs px-2 py-1 rounded-full bg-green-100 text-green-800';
-        ws.send(JSON.stringify({ type: 'fetchOffline' })); // 拉取离线消息
-        ws.send(JSON.stringify({ type: 'fetchPermissions' })); // 加载权限列表
       };
 
       // 接收消息
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        if (data.type === 'message' && data.from !== 'i') {
-          addMessage(data.from, data.content, data.time);
-        } else if (data.type === 'offlineMessages') {
-          renderOfflineMessages(data.messages);
-        } else if (data.type === 'permissionsList') {
-          renderPermissions(data.allowed, data.pending);
-        } else if (data.type === 'verifyRequest') {
-          // 收到验证请求，刷新权限列表
-          ws.send(JSON.stringify({ type: 'fetchPermissions' }));
+        if (data.type === 'verifyPass') {
+          // 验证通过
+          isVerified = true;
+          document.getElementById('verifyTip').classList.add('hidden');
+          localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify({
+            nickname: document.getElementById('guestNickname').value,
+            id: guestId,
+            isVerified: true
+          }));
+          alert('主人已通过你的验证，可正常发送消息！');
+        } else if (data.type === 'verifyReject') {
+          // 验证被拒绝
+          document.getElementById('verifyTip').textContent = '你的消息已被主人拒绝';
+          document.getElementById('verifyTip').className = 'p-2 bg-red-50 text-red-700 rounded-lg mb-2 text-sm';
+        } else if (data.type === 'message' && data.from === 'i') {
+          // 接收主人消息
+          addMessage('i', data.content, data.time);
         }
       };
 
@@ -143,121 +119,42 @@
       };
     }
 
-    // 回复消息
-    document.getElementById('replyBtn').addEventListener('click', () => {
-      const content = document.getElementById('replyInput').value.trim();
+    // 发送消息
+    document.getElementById('sendBtn').addEventListener('click', () => {
+      const content = document.getElementById('msgInput').value.trim();
       if (!content) return;
       
-      const targetGuestId = prompt('输入对方客人ID（留空则广播）：');
-      ws.send(JSON.stringify({
-        type: 'message',
-        to: targetGuestId || '',
-        from: 'i',
+      const nickname = document.getElementById('guestNickname').value;
+      const messageData = {
+        type: isVerified ? 'message' : 'verifyRequest', // 首次为验证请求
+        to: iId,
+        from: nickname,
+        guestId: guestId,
         content: content,
         time: new Date().toLocaleTimeString()
-      }));
+      };
       
-      addMessage('我', content, new Date().toLocaleTimeString());
-      document.getElementById('replyInput').value = '';
+      ws.send(JSON.stringify(messageData));
+      addMessage('我', content, messageData.time);
+      document.getElementById('msgInput').value = '';
+      
+      // 首次发送显示验证提示
+      if (!isVerified) {
+        document.getElementById('verifyTip').classList.remove('hidden');
+      }
     });
 
-    // 渲染权限列表
-    function renderPermissions(allowed, pending) {
-      // 渲染待验证客人
-      const pendingEl = document.getElementById('pendingGuests');
-      if (pending.length === 0) {
-        pendingEl.innerHTML = '<p class="text-xs text-gray-500">暂无待验证客人</p>';
-      } else {
-        pendingEl.innerHTML = pending.map(guest => `
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-sm">${guest.nickname}（${guest.id}）</span>
-            <div>
-              <button onclick="allowGuest('${guest.id}', '${guest.nickname}')" class="text-xs text-green-600">允许</button>
-              <button onclick="rejectGuest('${guest.id}')" class="text-xs text-red-600 ml-2">禁止</button>
-            </div>
-          </div>
-        `).join('');
-      }
-
-      // 渲染已允许客人
-      const allowedEl = document.getElementById('allowedGuests');
-      if (allowed.length === 0) {
-        allowedEl.innerHTML = '<p class="text-xs text-gray-500">暂无已允许客人</p>';
-      } else {
-        allowedEl.innerHTML = allowed.map(guest => `
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-sm">${guest.nickname}（${guest.id}）</span>
-            <button onclick="removeGuest('${guest.id}')" class="text-xs text-red-600">移除</button>
-          </div>
-        `).join('');
-      }
-    }
-
-    // 允许客人
-    function allowGuest(guestId, nickname) {
-      ws.send(JSON.stringify({
-        type: 'allowGuest',
-        guestId: guestId,
-        nickname: nickname
-      }));
-    }
-
-    // 禁止客人
-    function rejectGuest(guestId) {
-      ws.send(JSON.stringify({
-        type: 'rejectGuest',
-        guestId: guestId
-      }));
-    }
-
-    // 移除已允许的客人
-    function removeGuest(guestId) {
-      ws.send(JSON.stringify({
-        type: 'removeGuest',
-        guestId: guestId
-      }));
-    }
-
-    // 添加在线消息到界面
+    // 添加消息到界面
     function addMessage(from, content, time) {
       const msgDiv = document.createElement('div');
       const isSelf = from === '我';
-      msgDiv.className = `mb-2 p-2 rounded-lg ${isSelf ? 'bg-green-50' : 'bg-gray-50'}`;
+      msgDiv.className = `mb-2 p-2 rounded-lg ${isSelf ? 'bg-blue-50' : 'bg-gray-50'}`;
       msgDiv.innerHTML = `
         <div class="text-xs text-gray-500">${from} ${time}</div>
         <div>${content}</div>
       `;
-      document.getElementById('onlineMessages').appendChild(msgDiv);
-      document.getElementById('onlineMessages').scrollTop = document.getElementById('onlineMessages').scrollHeight;
-    }
-
-    // 渲染离线消息
-    function renderOfflineMessages(messages) {
-      const offlineList = document.getElementById('offlineList');
-      const noOffline = document.getElementById('noOffline');
-      
-      if (messages.length === 0) {
-        noOffline.classList.remove('hidden');
-        offlineList.classList.add('hidden');
-        return;
-      }
-      
-      noOffline.classList.add('hidden');
-      offlineList.classList.remove('hidden');
-      offlineList.innerHTML = '';
-      
-      messages.forEach(msg => {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = 'mb-2 p-2 bg-white rounded-lg border';
-        msgDiv.innerHTML = `
-          <div class="text-xs text-gray-500">${msg.from} ${msg.time}</div>
-          <div>${msg.content}</div>
-          <button class="mt-1 text-xs text-green-600 hover:underline" onclick="this.parentElement.remove()">
-            标记已读
-          </button>
-        `;
-        offlineList.appendChild(msgDiv);
-      });
+      document.getElementById('messages').appendChild(msgDiv);
+      document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
     }
   </script>
 </body>
