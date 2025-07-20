@@ -1,2 +1,0 @@
-# pmsg
-personal mag receiver
